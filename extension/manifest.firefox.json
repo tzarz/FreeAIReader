@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "FreeAIReader",
+  "version": "0.1.0",
+  "description": "Free, ad-free local AI voices for webpages and PDFs.",
+  "permissions": ["menus", "storage"],
+  "optional_permissions": ["downloads"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:8080/*", "http://localhost:8080/*"],
+  "background": { "scripts": ["background.js"] },
+  "action": { "default_title": "FreeAIReader settings" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": { "id": "freeaireader@local" }
+  }
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreeAIReader settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="mark" aria-hidden="true">FR</div>
+      <div>
+        <p class="eyebrow">BUILT WITH FISH AUDIO</p>
+        <h1>FreeAIReader</h1>
+        <p class="tagline">No cost, no ads, just free AI voices of your desire. Power to the people.</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><p class="eyebrow">LOCAL SPEECH</p><h2>Reader settings</h2></div>
+        <span class="local-badge"><span></span> On your computer</span>
+      </div>
+      <p class="help">Text is sent to the Fish Speech server on this computer. FreeAIReader does not use a cloud service.</p>
+      <form id="settings-form">
+        <label class="field">
+          <span>Fish Speech server</span>
+          <input id="server-url" type="url" value="http://127.0.0.1:8080" required>
+          <small>Use a local address such as http://127.0.0.1:8080.</small>
+        </label>
+
+        <div class="two-col">
+          <label class="field">
+            <span>Sentences to prepare ahead</span>
+            <input id="buffer-size" type="number" min="1" max="20" value="5" required>
+            <small>Default: five sentences.</small>
+          </label>
+          <label class="field">
+            <span>Built-in voice style</span>
+            <select id="voice-style">
+              <option value="natural">Natural reader</option>
+              <option value="warm">Warm narrator</option>
+              <option value="bright">Bright and upbeat</option>
+              <option value="calm">Calm and gentle</option>
+              <option value="storyteller">Expressive storyteller</option>
+            </select>
+            <small>These styles guide Fish Speech. Use an MP3 reference for a specific voice.</small>
+          </label>
+        </div>
+
+        <fieldset>
+          <legend>Clone a voice from an MP3</legend>
+          <label class="field">
+            <span>Reference recording</span>
+            <input id="voice-file" type="file" accept="audio/mpeg,.mp3,audio/*">
+            <small>Choose a short recording and enter the words spoken in it.</small>
+          </label>
+          <label class="field">
+            <span>Recording transcript</span>
+            <textarea id="voice-transcript" rows="3" placeholder="Type the exact words spoken in the reference recording"></textarea>
+          </label>
+          <label class="check-row">
+            <input id="keep-voice" type="checkbox">
+            <span>Save this reference voice on this device for future sessions</span>
+          </label>
+          <p class="help compact">The MP3 is sent only to your local Fish Speech server when you read. Only use a recording you have permission to use.</p>
+          <button class="text-button" id="remove-voice" type="button">Remove saved reference voice</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Audio files</legend>
+          <label class="check-row">
+            <input id="save-audio" type="checkbox">
+            <span>Keep a copy of each generated sentence</span>
+          </label>
+          <label class="field" id="folder-field">
+            <span>Folder inside your browser's Downloads folder</span>
+            <input id="save-folder" type="text" value="FreeAIReader" placeholder="FreeAIReader">
+            <small>Leave blank to save directly in Downloads. Clear “Keep a copy” to delete audio after playback.</small>
+          </label>
+        </fieldset>
+
+        <div class="form-footer">
+          <p id="settings-status" role="status" aria-live="polite"></p>
+          <button class="primary" type="submit">Save settings</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card pdf-card">
+      <div><p class="eyebrow">PDF READER</p><h2>Read a PDF</h2></div>
+      <p class="help">Choose a PDF from your computer. Its text is extracted in this extension page and sent to your local reader.</p>
+      <label class="field">
+        <span>PDF file</span>
+        <input id="pdf-file" type="file" accept="application/pdf,.pdf">
+      </label>
+      <div class="pdf-actions">
+        <button class="secondary" id="read-pdf" type="button" disabled>Read PDF aloud</button>
+        <button class="secondary" id="resume-audio" type="button" hidden>Start audio</button>
+        <button class="text-button" id="stop-reading" type="button">Stop reading</button>
+      </div>
+      <p id="pdf-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <footer>
+      <strong>Built with Fish Audio</strong>
+      <span>Generated audio is temporary unless saving is turned on.</span>
+      <a href="https://github.com/fishaudio/fish-speech" target="_blank" rel="noreferrer">Fish Speech source and license</a>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

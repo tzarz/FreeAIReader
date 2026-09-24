@@ -1,0 +1,10 @@
+FreeAIReader original source code is licensed under the MIT License.
+
+Fish Speech is developed by 39 AI, INC. The official source and model weights
+are licensed under the Fish Audio Research License, Copyright © 39 AI, INC.
+All Rights Reserved. See vendor/fish-speech/LICENSE for the complete terms.
+The same license is copied to LICENSE-FISH-AUDIO.txt for source archives.
+Fish Audio requires distributed copies to include a copy of that license and
+to prominently display “Built with Fish Audio” in the related interface or
+documentation. This project includes that attribution. Commercial use of Fish
+Audio Materials requires a separate written license from Fish Audio.

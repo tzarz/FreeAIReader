@@ -1,0 +1,14 @@
+{
+  "name": "freeaireader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A free, ad-free local text-to-speech browser extension",
+  "type": "module",
+  "scripts": {
+    "package": "node scripts/package-browser.mjs"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2",
+    "pdfjs-dist": "^5.4.624"
+  }
+}
