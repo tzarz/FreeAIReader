@@ -1,7 +1,8 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
+import { build } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requested = process.argv[2];
@@ -27,6 +28,27 @@ async function packageBrowser(target) {
   await rm(path.join(output, "manifest.chrome.json"), { force: true });
   await rm(path.join(output, "manifest.firefox.json"), { force: true });
 
+  const runtimeOutput = path.join(output, "vendor");
+  await mkdir(runtimeOutput, { recursive: true });
+  await build({
+    entryPoints: [path.join(source, "model-runtime-entry.js")],
+    outfile: path.join(runtimeOutput, "model-runtime.js"),
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    target: "es2022",
+    minify: true
+  });
+  await rm(path.join(output, "model-runtime-entry.js"), { force: true });
+  const ortDist = path.join(root, "node_modules", "onnxruntime-web", "dist");
+  const ortOutput = path.join(runtimeOutput, "onnx");
+  await mkdir(ortOutput, { recursive: true });
+  for (const name of await readdir(ortDist)) {
+    if (name === "ort.bundle.min.mjs" || (/^ort-wasm-simd-threaded(?:\.jsep|\.asyncify|\.jspi)?\.(?:mjs|wasm)$/.test(name))) {
+      await copyFile(path.join(ortDist, name), path.join(ortOutput, name));
+    }
+  }
+
   const pdfBuild = path.join(root, "node_modules", "pdfjs-dist", "legacy", "build");
   const pdfOutput = path.join(output, "vendor", "pdfjs");
   await mkdir(pdfOutput, { recursive: true });
@@ -37,8 +59,14 @@ async function packageBrowser(target) {
   }
   await cp(path.join(root, "node_modules", "pdfjs-dist", "LICENSE"), path.join(output, "LICENSE-PDFJS.txt"));
   await cp(path.join(root, "LICENSE"), path.join(output, "LICENSE-MIT.txt"));
-  await cp(path.join(root, "vendor", "fish-speech", "LICENSE"), path.join(output, "LICENSE-FISH-AUDIO.txt"));
-  await cp(path.join(root, "NOTICE"), path.join(output, "NOTICE"));
+  await cp(path.join(root, "node_modules", "kokoro-js", "LICENSE"), path.join(output, "LICENSE-KOKORO.txt"));
+  await cp(path.join(root, "node_modules", "@huggingface", "transformers", "LICENSE"), path.join(output, "LICENSE-TRANSFORMERS-JS.txt"));
+  await cp(path.join(root, "node_modules", "phonemizer", "LICENSE"), path.join(output, "LICENSE-PHONEMIZER.txt"));
+  await writeFile(path.join(output, "LICENSE-ONNX-RUNTIME-WEB.txt"), `ONNX Runtime Web is licensed under the MIT License by Microsoft Corporation.
+
+The license and copyright notices for the upstream project are available at:
+https://github.com/microsoft/onnxruntime/blob/main/README.md#license
+`);
   const zipPath = path.join(root, "dist", `freeaireader-${target}.zip`);
   const files = {};
   await collectFiles(output, output, files);

@@ -12,6 +12,13 @@ let keepAliveTimer = null;
 let statusTextNode = null;
 let statusActionNode = null;
 
+globalThis.addEventListener?.("error", (event) => {
+  recordContentLog("extension.content.error", { kind: errorKind(event.error) });
+});
+globalThis.addEventListener?.("unhandledrejection", (event) => {
+  recordContentLog("extension.content.unhandled-rejection", { kind: errorKind(event.reason) });
+});
+
 document.addEventListener("contextmenu", (event) => {
   lastContextPoint = { x: event.clientX, y: event.clientY };
 }, true);

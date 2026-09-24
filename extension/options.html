@@ -14,7 +14,7 @@
     <header class="hero">
       <div class="mark" aria-hidden="true">FR</div>
       <div>
-        <p class="eyebrow">BUILT WITH FISH AUDIO</p>
+        <p class="eyebrow">BROWSER-LOCAL VOICES</p>
         <h1>FreeAIReader</h1>
         <p class="tagline">No cost, no ads, just free AI voices of your desire. Power to the people.</p>
       </div>
@@ -25,14 +25,8 @@
         <div><p class="eyebrow">LOCAL SPEECH</p><h2>Reader settings</h2></div>
         <span class="local-badge"><span></span> On your computer</span>
       </div>
-      <p class="help">Text is sent to the Fish Speech server on this computer. FreeAIReader does not use a cloud service.</p>
+      <p class="help">Speech is generated inside this extension. After the voice model is downloaded, reading works without an internet connection. Page text stays in this browser.</p>
       <form id="settings-form">
-        <label class="field">
-          <span>Fish Speech server</span>
-          <input id="server-url" type="url" value="http://127.0.0.1:8080" required>
-          <small>Use a local address such as http://127.0.0.1:8080.</small>
-        </label>
-
         <div class="two-col">
           <label class="field">
             <span>Sentences to prepare ahead</span>
@@ -40,35 +34,21 @@
             <small>Default: five sentences.</small>
           </label>
           <label class="field">
-            <span>Built-in voice style</span>
+            <span>Voice</span>
             <select id="voice-style">
-              <option value="natural">Natural reader</option>
-              <option value="warm">Warm narrator</option>
-              <option value="bright">Bright and upbeat</option>
-              <option value="calm">Calm and gentle</option>
-              <option value="storyteller">Expressive storyteller</option>
+              <option value="af_heart">Heart — American English, feminine</option>
+              <option value="af_bella">Bella — American English, feminine</option>
+              <option value="af_nicole">Nicole — American English, feminine</option>
+              <option value="am_adam">Adam — American English, masculine</option>
+              <option value="bm_george">George — British English, masculine</option>
             </select>
-            <small>These styles guide Fish Speech. Use an MP3 reference for a specific voice.</small>
+            <small>These are natural neural voices included with the Kokoro model.</small>
           </label>
         </div>
 
         <fieldset>
-          <legend>Clone a voice from an MP3</legend>
-          <label class="field">
-            <span>Reference recording</span>
-            <input id="voice-file" type="file" accept="audio/mpeg,.mp3,audio/*">
-            <small>Choose a short recording and enter the words spoken in it.</small>
-          </label>
-          <label class="field">
-            <span>Recording transcript</span>
-            <textarea id="voice-transcript" rows="3" placeholder="Type the exact words spoken in the reference recording"></textarea>
-          </label>
-          <label class="check-row">
-            <input id="keep-voice" type="checkbox">
-            <span>Save this reference voice on this device for future sessions</span>
-          </label>
-          <p class="help compact">The MP3 is sent only to your local Fish Speech server when you read. Only use a recording you have permission to use.</p>
-          <button class="text-button" id="remove-voice" type="button">Remove saved reference voice</button>
+          <legend>More voice engines</legend>
+          <p class="help compact">Fish Audio reference voice cloning is planned as a separate in-browser engine. Its current official weights need a different runtime and are not used by Kokoro. No Python server or background program is installed.</p>
         </fieldset>
 
         <fieldset>
@@ -78,7 +58,7 @@
             <span>Keep a copy of each generated sentence</span>
           </label>
           <label class="field" id="folder-field">
-            <span>Folder inside your browser's Downloads folder</span>
+          <span>Folder inside your browser's Downloads folder</span>
             <input id="save-folder" type="text" value="FreeAIReader" placeholder="FreeAIReader">
             <small>Leave blank to save directly in Downloads. Clear “Keep a copy” to delete audio after playback.</small>
           </label>
@@ -92,40 +72,30 @@
     </section>
 
     <section class="card model-card">
-      <div><p class="eyebrow">LOCAL MODEL</p><h2>Download Fish Speech weights</h2></div>
+      <div><p class="eyebrow">VOICE MODEL</p><h2>Download and prepare Kokoro</h2></div>
+      <p class="help">Kokoro is an 82 million parameter neural voice model. Its quantized ONNX weights are about 92 MB under the Apache 2.0 license. The extension stores the weights in this browser’s private model cache and runs them here.</p>
       <label class="field">
-        <span>Model</span>
+        <span>Available engine</span>
         <select id="model-choice">
-          <option value="fish-speech-1.5">Fish Speech V1.5 — compact, about 1.47 GB</option>
-          <option value="s2-pro">Fish Audio S2 Pro — flagship, about 11 GB</option>
+          <option value="kokoro">Kokoro 82M — quantized ONNX, about 92 MB</option>
+          <option value="fish" disabled>Fish Audio — browser port planned</option>
         </select>
       </label>
-      <p id="model-description" class="help"></p>
-      <p id="model-hardware" class="model-hardware"></p>
-      <label class="check-row model-license-check">
-        <input id="accept-model-license" type="checkbox">
-        <span id="model-license-text"></span>
-      </label>
       <div class="model-actions">
-        <button class="primary" id="download-model" type="button" disabled>Download model files</button>
-        <button class="secondary" id="cancel-model" type="button" hidden>Cancel downloads</button>
-        <a id="model-link" href="https://huggingface.co/fishaudio/fish-speech-1.5" target="_blank" rel="noreferrer">Official model page and license</a>
+        <button class="primary" id="download-model" type="button">Download Kokoro model</button>
+        <button class="secondary" id="clear-model" type="button">Remove local model</button>
+        <button class="secondary" id="test-voice" type="button">Generate a voice sample</button>
+        <a id="model-link" href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX" target="_blank" rel="noreferrer">Model card and license</a>
       </div>
       <progress id="model-progress" max="100" value="0" aria-label="Model download progress"></progress>
       <p id="model-status" role="status" aria-live="polite"></p>
-      <ol id="model-files" class="model-files"></ol>
-      <details>
-        <summary id="model-run-summary">Run it with Fish Speech V1.5</summary>
-        <p id="model-run-steps" class="help"></p>
-        <pre><code id="model-run-command"></code></pre>
-        <p class="help">If Firefox uses another Downloads location, replace the path above.</p>
-      </details>
-      <p class="help compact">FishAudio S1-mini is listed as a 0.5B model, but Hugging Face gates its files and it needs more disk space than V1.5's public download.</p>
+      <audio id="voice-sample" controls hidden></audio>
+      <p class="help compact">The first download needs internet access. Speech generation uses local WebAssembly in Firefox, and WebGPU when supported by another browser. Browser cleanup can remove cached files; in Firefox Private Browsing, they may be removed when the private session ends.</p>
     </section>
 
     <section class="card pdf-card">
       <div><p class="eyebrow">PDF READER</p><h2>Read a PDF</h2></div>
-      <p class="help">Choose a PDF from your computer, or right-click a PDF open in your browser and choose Read from the top. Its text is extracted here and sent to your local reader.</p>
+      <p class="help">Choose a PDF from your computer, or right-click a PDF open in your browser and choose Read from the top. Its text is extracted here and sent to the local browser voice engine.</p>
       <label class="field">
         <span>PDF file</span>
         <input id="pdf-file" type="file" accept="application/pdf,.pdf">
@@ -154,11 +124,11 @@
     </section>
 
     <footer>
-      <strong>Built with Fish Audio</strong>
+      <strong>Built with Kokoro ONNX and Transformers.js</strong>
       <span>Generated audio is temporary unless saving is turned on.</span>
-      <a href="https://github.com/fishaudio/fish-speech" target="_blank" rel="noreferrer">Fish Speech source and license</a>
+      <a href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX" target="_blank" rel="noreferrer">Kokoro model and license</a>
     </footer>
   </main>
-  <script src="options.js"></script>
+  <script type="module" src="options.js"></script>
 </body>
 </html>

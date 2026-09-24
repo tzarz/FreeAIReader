@@ -1,3 +1,5 @@
+import { KokoroTTS, kokoroEnv, transformersEnv } from "./vendor/model-runtime.js";
+
 const api = globalThis.browser ?? globalThis.chrome;
 if (!api?.runtime) {
   const warning = document.querySelector("#browser-api-warning");
@@ -6,14 +8,18 @@ if (!api?.runtime) {
 }
 
 const DEFAULTS = {
-  serverUrl: "http://127.0.0.1:8080",
   bufferSize: 5,
-  voiceStyle: "natural",
+  voiceStyle: "af_heart",
   saveAudio: false,
-  saveFolder: "FreeAIReader",
-  referenceAudio: "",
-  referenceTranscript: ""
+  saveFolder: "FreeAIReader"
 };
+
+const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const MODEL_CACHE_NAME = "transformers-cache";
+const VOICE_CACHE_NAME = "kokoro-voices";
+const VOICES = ["af_heart", "af_bella", "af_nicole", "am_adam", "bm_george"];
+transformersEnv.useBrowserCache = true;
+kokoroEnv.wasmPaths = api.runtime.getURL("vendor/onnx/");
 
 const form = document.querySelector("#settings-form");
 const status = document.querySelector("#settings-status");
@@ -22,21 +28,14 @@ const pdfInput = document.querySelector("#pdf-file");
 const readPdfButton = document.querySelector("#read-pdf");
 const resumeAudioButton = document.querySelector("#resume-audio");
 const downloadModelButton = document.querySelector("#download-model");
-const cancelModelButton = document.querySelector("#cancel-model");
+const clearModelButton = document.querySelector("#clear-model");
+const testVoiceButton = document.querySelector("#test-voice");
+const voiceSample = document.querySelector("#voice-sample");
 const modelChoice = document.querySelector("#model-choice");
 const modelStatus = document.querySelector("#model-status");
 const modelProgress = document.querySelector("#model-progress");
-const modelFilesList = document.querySelector("#model-files");
-const modelDescription = document.querySelector("#model-description");
-const modelHardware = document.querySelector("#model-hardware");
-const modelLicenseText = document.querySelector("#model-license-text");
-const modelLink = document.querySelector("#model-link");
-const modelRunSummary = document.querySelector("#model-run-summary");
-const modelRunSteps = document.querySelector("#model-run-steps");
-const modelRunCommand = document.querySelector("#model-run-command");
 const diagnosticLogList = document.querySelector("#diagnostic-log");
 const logStatus = document.querySelector("#log-status");
-let selectedReference = null;
 let selectedPdf = null;
 let currentPlayer = null;
 let currentObjectUrl = null;
@@ -47,54 +46,42 @@ let playbackQueue = [];
 let isPlaying = false;
 let keepAlivePort = null;
 let keepAliveTimer = null;
-let modelPollTimer = null;
 let diagnosticsPollTimer = null;
+let kokoroModel = null;
+let kokoroModelPromise = null;
+let inferenceBackend = "wasm";
+let lastProgressByFile = new Map();
 
-const MODEL_UI = {
-  "fish-speech-1.5": {
-    label: "Fish Speech V1.5",
-    repo: "fishaudio/fish-speech-1.5",
-    license: "CC BY-NC-SA 4.0",
-    description: "The compact public model is about 1.47 GB. Fish Audio's V1.5.1 guide recommends 4 GB of GPU memory for inference; this computer's 16 GB RTX 4080 SUPER is above that recommendation.",
-    hardware: "Compact option: about 1.47 GB to download. The official V1.5.1 guide recommends 4 GB of GPU memory.",
-    url: "https://huggingface.co/fishaudio/fish-speech-1.5",
-    steps: "V1.5 requires Fish Speech's legacy v1.5.1 server. In vendor/fish-speech, check out v1.5.1, then install Python 3.10 and PyTorch 2.4.1 as shown below.",
-    command: "cd vendor/fish-speech\ngit checkout v1.5.1\npython3.10 -m venv .venv-v1.5\nsource .venv-v1.5/bin/activate\npython -m pip install --upgrade pip\npython -m pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1\npython -m pip install -e '.[stable]'\npython -m tools.api_server --listen 127.0.0.1:8080 --llama-checkpoint-path \"$HOME/Downloads/FreeAIReader/models/fish-speech-1.5\" --decoder-checkpoint-path \"$HOME/Downloads/FreeAIReader/models/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth\" --decoder-config-name firefly_gan_vq"
-  },
-  "s2-pro": {
-    label: "Fish Audio S2 Pro",
-    repo: "fishaudio/s2-pro",
-    license: "Fish Audio Research License",
-    description: "The current flagship files total about 11 GB. Fish Audio permits research and noncommercial use under its Research License; commercial use needs a separate written license.",
-    hardware: "S2 Pro option: about 11 GB to download. Fish Audio recommends 24 GB of GPU memory; this computer's 16 GB RTX 4080 SUPER is below that recommendation.",
-    url: "https://huggingface.co/fishaudio/s2-pro",
-    steps: "From vendor/fish-speech, use the current source checkout and choose a CUDA extra supported by your system.",
-    command: "cd vendor/fish-speech\ngit checkout 214da3cd841bda85da2496b96cd3c4d7edb1337e\nuv sync --python 3.12 --extra cu129\nuv run python tools/api_server.py --llama-checkpoint-path \"$HOME/Downloads/FreeAIReader/models/s2-pro\" --decoder-checkpoint-path \"$HOME/Downloads/FreeAIReader/models/s2-pro/codec.pth\" --listen 127.0.0.1:8080"
-  }
-};
-
-document.querySelector("#accept-model-license").addEventListener("change", async (event) => {
-  downloadModelButton.disabled = !event.target.checked;
-  if (event.target.checked) await recordUiLog("model.license.accepted", { source: MODEL_UI[modelChoice.value].repo });
+globalThis.addEventListener?.("error", (event) => {
+  recordUiLog("extension.options.error", { source: "options", kind: errorKind(event.error) });
 });
-modelChoice.addEventListener("change", () => updateModelChoice(true));
-updateModelChoice(false);
+globalThis.addEventListener?.("unhandledrejection", (event) => {
+  recordUiLog("extension.options.unhandled-rejection", { source: "options", kind: errorKind(event.reason) });
+});
 
-function updateModelChoice(clearAgreement) {
-  const selected = MODEL_UI[modelChoice.value] || MODEL_UI["fish-speech-1.5"];
-  modelDescription.textContent = selected.description;
-  modelHardware.textContent = selected.hardware;
-  modelLicenseText.textContent = `I have reviewed and agree to use this model under the ${selected.license}.`;
-  modelLink.href = selected.url;
-  modelRunSummary.textContent = `Run ${selected.label} with Fish Speech`;
-  modelRunSteps.textContent = selected.steps;
-  modelRunCommand.textContent = selected.command;
-  downloadModelButton.textContent = `Download ${selected.label} files`;
-  if (clearAgreement) document.querySelector("#accept-model-license").checked = false;
-  downloadModelButton.disabled = !document.querySelector("#accept-model-license").checked;
-}
+modelChoice.addEventListener("change", async () => {
+  if (modelChoice.value === "fish") {
+    modelChoice.value = "kokoro";
+    await recordUiLog("model.engine.unavailable", { source: "fish-audio" });
+    modelStatus.textContent = "Fish Audio’s browser engine is planned, but is not runnable in this build.";
+  }
+});
 
-api.runtime.onMessage.addListener((message) => {
+api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "FREEAIREADER_SYNTHESIZE" && sender?.id === api.runtime.id) {
+    synthesizeKokoro(message.text, message.voice, { source: message.source, index: message.index })
+      .then((audio) => sendResponse({ ok: true, audioBase64: audio.base64, bytes: audio.bytes, backend: inferenceBackend }))
+      .catch(async (error) => {
+        await recordUiLog("speech.generation.failed", {
+          source: message.source || "reader",
+          index: Number(message.index) || 0,
+          voiceStyle: message.voice,
+          kind: errorKind(error)
+        });
+        sendResponse({ ok: false, error: error.message || "Speech generation failed." });
+      });
+    return true;
+  }
   if (message?.target !== "extension") return false;
   if (message?.type === "FREEAIREADER_PLAY_CHUNK") playChunk(message);
   if (message?.type === "FREEAIREADER_STATUS") {
@@ -110,9 +97,8 @@ loadSettings().catch(async (error) => {
   await recordUiLog("settings.load.failed", { kind: errorKind(error) });
 });
 openPdfHandoff();
-refreshModelDownload();
+refreshModelStorageStatus();
 recordUiLog("app.options.opened").then(refreshDiagnosticLog);
-modelPollTimer = setInterval(refreshModelDownload, 3000);
 diagnosticsPollTimer = setInterval(refreshDiagnosticLog, 5000);
 
 async function recordUiLog(event, details = {}) {
@@ -137,7 +123,7 @@ async function refreshDiagnosticLog() {
     diagnosticLogList.replaceChildren();
     for (const entry of [...entries].reverse()) {
       const li = document.createElement("li");
-      if (/fail|error|interrupted/i.test(entry.event)) li.dataset.level = "failure";
+      if (/fail|error|interrupt|denied|blocked|fallback|unavailable/i.test(entry.event)) li.dataset.level = "failure";
       const time = document.createElement("time");
       time.dateTime = entry.time;
       time.textContent = `${new Date(entry.time).toLocaleString()} — `;
@@ -158,79 +144,243 @@ async function refreshDiagnosticLog() {
   }
 }
 
-function formatBytes(value) {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unit = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
-  return `${(value / 1024 ** unit).toFixed(unit > 1 ? 2 : 0)} ${units[unit]}`;
+async function refreshModelStorageStatus() {
+  try {
+    const cache = await caches.open(MODEL_CACHE_NAME);
+    const requests = await cache.keys();
+    const modelFiles = requests.filter((request) => request.url.includes("Kokoro-82M-v1.0-ONNX"));
+    const estimate = await navigator.storage?.estimate?.();
+    const persisted = await navigator.storage?.persisted?.();
+    const used = estimate?.usage ? Math.round(estimate.usage / 1024 / 1024) : null;
+    const persistenceHint = persisted === false
+      ? " This browser has not guaranteed storage; cleanup or closing a private session may remove it."
+      : "";
+    modelStatus.textContent = modelFiles.length
+      ? "Kokoro model files are stored in this browser cache" + (used === null ? "." : " (" + used + " MB browser storage in use).") + persistenceHint
+      : "The Kokoro model has not been prepared in this browser yet.";
+  } catch (error) {
+    modelStatus.textContent = "Could not inspect browser model storage (" + errorKind(error) + ").";
+    await recordUiLog("model.storage.inspect.failed", { kind: errorKind(error) });
+  }
 }
 
-async function refreshModelDownload() {
+function handleModelProgress(info) {
+  if (!info || typeof info !== "object") return;
+  const file = String(info.file || info.name || "model file").split("/").pop().slice(0, 80);
+  if (info.status === "initiate") {
+    modelStatus.textContent = "Preparing " + file + "…";
+    modelProgress.value = 0;
+    lastProgressByFile.set(file, 0);
+  } else if (info.status === "progress") {
+    const percent = Math.max(0, Math.min(100, Number(info.progress) || 0));
+    modelProgress.value = percent;
+    modelStatus.textContent = "Downloading " + file + " — " + Math.floor(percent) + "%";
+    const prior = lastProgressByFile.get(file) ?? -10;
+    if (percent >= 100 || percent - prior >= 25) {
+      lastProgressByFile.set(file, percent);
+      recordUiLog("model.download.progress", { source: file, bytes: Number(info.loaded) || 0, totalBytes: Number(info.total) || 0 });
+    }
+  } else if (info.status === "done") {
+    modelStatus.textContent = "Stored " + file + " in browser cache.";
+    recordUiLog("model.file.cached", { source: file });
+  } else if (info.status === "ready") {
+    modelStatus.textContent = "Kokoro voice model is ready in this browser.";
+  }
+}
+
+async function ensureKokoroLoaded() {
+  if (kokoroModel) return kokoroModel;
+  if (kokoroModelPromise) return kokoroModelPromise;
+  kokoroModelPromise = (async () => {
+    modelStatus.textContent = "Loading Kokoro in the browser…";
+    await recordUiLog("model.load.started", { source: MODEL_ID });
+    const useWebGpu = Boolean(navigator.gpu) && !/Firefox/i.test(navigator.userAgent);
+    const preferredBackend = useWebGpu ? "webgpu" : "wasm";
+    try {
+      kokoroModel = await KokoroTTS.from_pretrained(MODEL_ID, {
+        dtype: "q8",
+        device: preferredBackend,
+        progress_callback: handleModelProgress
+      });
+      inferenceBackend = preferredBackend;
+    } catch (error) {
+      if (!useWebGpu) throw error;
+      await recordUiLog("model.backend.fallback", { source: "kokoro", backend: "wasm", kind: errorKind(error) });
+      modelStatus.textContent = "GPU setup failed; retrying with portable WebAssembly…";
+      kokoroModel = await KokoroTTS.from_pretrained(MODEL_ID, {
+        dtype: "q8",
+        device: "wasm",
+        progress_callback: handleModelProgress
+      });
+      inferenceBackend = "wasm";
+    }
+    await recordUiLog("model.load.complete", { source: MODEL_ID, backend: inferenceBackend });
+    return kokoroModel;
+  })();
   try {
-    const result = await api.runtime.sendMessage({ type: "FREEAIREADER_GET_MODEL_DOWNLOAD" });
-    if (result?.error) throw new Error(result.error);
-    const job = result?.job;
-    if (!job) {
-      modelStatus.textContent = `Files will be saved under Downloads/FreeAIReader/models/${modelChoice.value}.`;
-      cancelModelButton.hidden = true;
-      modelChoice.disabled = false;
-      return;
-    }
-    if (job.status === "downloading" && modelChoice.value !== job.modelKey) {
-      modelChoice.value = job.modelKey;
-      updateModelChoice(false);
-    }
-    modelChoice.disabled = job.status === "downloading";
-    modelProgress.value = job.totalBytes ? Math.floor(100 * job.receivedBytes / job.totalBytes) : 0;
-    modelStatus.textContent = `${job.label || job.modelKey} — ${job.status === "complete" ? "download complete" : job.status === "needs-attention" ? "some files need attention" : "downloading"}: ${formatBytes(job.receivedBytes)} of ${formatBytes(job.totalBytes)} (${job.completedFiles}/${job.files.length} files complete).`;
-    cancelModelButton.hidden = job.status !== "downloading";
-    modelFilesList.replaceChildren();
-    for (const file of job.files) {
-      const li = document.createElement("li");
-      const received = file.state === "complete" ? file.size : file.bytesReceived || 0;
-      const detail = file.state === "in_progress" ? `${formatBytes(received)} / ${formatBytes(file.size)}` : file.state;
-      li.textContent = `${file.name} — ${detail}${file.error ? ` (${file.error})` : ""}`;
-      modelFilesList.append(li);
-    }
+    return await kokoroModelPromise;
   } catch (error) {
-    modelStatus.textContent = `Could not read download status (${errorKind(error)}).`;
+    kokoroModel = null;
+    await recordUiLog("model.load.failed", { source: MODEL_ID, kind: errorKind(error) });
+    throw error;
+  } finally {
+    kokoroModelPromise = null;
+  }
+}
+
+async function cacheVoiceAssets() {
+  const cache = await caches.open(VOICE_CACHE_NAME);
+  for (let index = 0; index < VOICES.length; index += 1) {
+    const voice = VOICES[index];
+    const url = "https://huggingface.co/" + MODEL_ID + "/resolve/main/voices/" + voice + ".bin";
+    try {
+      let response = await cache.match(url);
+      if (!response) {
+        modelStatus.textContent = "Downloading voice " + (index + 1) + " of " + VOICES.length + "…";
+        response = await fetch(url);
+        if (!response.ok) throw new Error("Voice download returned HTTP " + response.status + ".");
+        await cache.put(url, response.clone());
+      }
+      modelProgress.value = 90 + Math.floor(((index + 1) / VOICES.length) * 10);
+      await recordUiLog("model.voice.cached", { source: voice, bytes: Number(response.headers.get("content-length")) || 0 });
+    } catch (error) {
+      await recordUiLog("model.voice.cache.failed", { source: voice, status: Number(error.status) || 0, kind: errorKind(error) });
+      throw new Error("Could not save the " + voice + " voice file: " + error.message);
+    }
+  }
+}
+
+async function prepareKokoro() {
+  if (modelChoice.value !== "kokoro") throw new Error("Choose an available browser voice model.");
+  try {
+    if (navigator.storage?.persist) {
+      try {
+        const persisted = await navigator.storage.persist();
+        if (!persisted) await recordUiLog("model.storage.persistence.denied", { source: "browser" });
+      } catch (error) {
+        await recordUiLog("model.storage.persistence.failed", { source: "browser", kind: errorKind(error) });
+      }
+    }
+    const estimate = await navigator.storage?.estimate?.();
+    if (estimate?.quota && estimate.quota - (estimate.usage || 0) < 120 * 1024 * 1024) {
+      throw new Error("This browser does not report enough free storage for Kokoro’s approximately 92 MB model.");
+    }
+    await ensureKokoroLoaded();
+    const modelCache = await caches.open(MODEL_CACHE_NAME);
+    const modelKeys = await modelCache.keys();
+    if (!modelKeys.some((request) => request.url.includes("Kokoro-82M-v1.0-ONNX"))) {
+      throw new Error("The browser could not persist Kokoro’s model files. Check private browsing storage or browser storage settings.");
+    }
+    await cacheVoiceAssets();
+    modelProgress.value = 100;
+    modelStatus.textContent = "Kokoro and the five selected voices are ready in this browser’s local cache.";
+    await recordUiLog("model.download.complete", { source: MODEL_ID, backend: inferenceBackend });
+    await refreshModelStorageStatus();
+  } catch (error) {
+    modelStatus.textContent = error.message || "Could not prepare the Kokoro model.";
+    await recordUiLog("model.download.failed", { source: MODEL_ID, kind: errorKind(error) });
+    throw error;
+  }
+}
+
+async function audioToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return { base64: btoa(binary), bytes: bytes.byteLength };
+}
+
+async function synthesizeKokoro(text, voice, details = {}) {
+  if (typeof text !== "string" || !text.trim()) throw new Error("There is no text to read.");
+  const safeVoice = VOICES.includes(voice) ? voice : DEFAULTS.voiceStyle;
+  const startedAt = Date.now();
+  try {
+    const model = await ensureKokoroLoaded();
+    const generated = await model.generate(text.trim(), { voice: safeVoice });
+    const blob = generated.toBlob();
+    const result = await audioToBase64(blob);
+    if (details.source === "voice-sample") {
+      if (voiceSample.dataset.objectUrl) URL.revokeObjectURL(voiceSample.dataset.objectUrl);
+      const sampleUrl = URL.createObjectURL(blob);
+      voiceSample.dataset.objectUrl = sampleUrl;
+      voiceSample.src = sampleUrl;
+      voiceSample.hidden = false;
+    }
+    if (details.source !== "voice-sample") {
+      await recordUiLog("speech.engine.complete", {
+        source: details.source || "reader",
+        index: Number(details.index) || 0,
+        voiceStyle: safeVoice,
+        durationMs: Date.now() - startedAt,
+        bytes: result.bytes,
+        backend: inferenceBackend
+      });
+    }
+    return { ...result, blob };
+  } catch (error) {
+    await recordUiLog("speech.engine.failed", {
+      source: details.source || "reader",
+      index: Number(details.index) || 0,
+      voiceStyle: safeVoice,
+      durationMs: Date.now() - startedAt,
+      kind: errorKind(error)
+    });
+    throw error;
   }
 }
 
 downloadModelButton.addEventListener("click", async () => {
-  if (!document.querySelector("#accept-model-license").checked) return;
   downloadModelButton.disabled = true;
-  modelStatus.textContent = "Requesting permission and checking Fish Audio's official model listing…";
+  clearModelButton.disabled = true;
+  modelProgress.value = 0;
+  lastProgressByFile = new Map();
+  await recordUiLog("model.download.started", { source: MODEL_ID });
   try {
-    const granted = await api.permissions.request({ permissions: ["downloads"] });
-    if (!granted) {
-      await recordUiLog("model.permission.denied", { source: "downloads" });
-      throw new Error("Allow Downloads permission to save model files.");
-    }
-    const result = await api.runtime.sendMessage({ type: "FREEAIREADER_START_MODEL_DOWNLOAD", modelKey: modelChoice.value });
-    if (!result?.ok) throw new Error(result?.error || "Could not start the model download.");
-    modelStatus.textContent = "Model downloads queued in Firefox Downloads.";
-    await refreshModelDownload();
-    await refreshDiagnosticLog();
+    await prepareKokoro();
   } catch (error) {
-    modelStatus.textContent = error.message;
-    await recordUiLog("model.download.failed", { kind: errorKind(error) });
+    console.error("FreeAIReader could not prepare Kokoro", error);
   } finally {
-    downloadModelButton.disabled = !document.querySelector("#accept-model-license").checked;
+    downloadModelButton.disabled = false;
+    clearModelButton.disabled = false;
+    await refreshDiagnosticLog();
   }
 });
 
-cancelModelButton.addEventListener("click", async () => {
-  cancelModelButton.disabled = true;
+testVoiceButton.addEventListener("click", async () => {
+  testVoiceButton.disabled = true;
+  modelStatus.textContent = "Generating a short local voice sample…";
   try {
-    await api.runtime.sendMessage({ type: "FREEAIREADER_CANCEL_MODEL_DOWNLOAD" });
-    await refreshModelDownload();
-    await refreshDiagnosticLog();
+    await recordUiLog("speech.sample.started", { voiceStyle: document.querySelector("#voice-style").value });
+    await synthesizeKokoro("This is a sample of the selected Kokoro voice.", document.querySelector("#voice-style").value, { source: "voice-sample" });
+    modelStatus.textContent = "Sample ready. Press play below to hear it.";
+    await recordUiLog("speech.sample.complete", { voiceStyle: document.querySelector("#voice-style").value });
   } catch (error) {
-    modelStatus.textContent = `Could not cancel downloads (${errorKind(error)}).`;
-    await recordUiLog("model.download.cancel.failed", { kind: errorKind(error) });
+    modelStatus.textContent = error.message || "Could not generate the voice sample.";
+    await recordUiLog("speech.sample.failed", { voiceStyle: document.querySelector("#voice-style").value, kind: errorKind(error) });
   } finally {
-    cancelModelButton.disabled = false;
+    testVoiceButton.disabled = false;
+    await refreshDiagnosticLog();
+  }
+});
+
+clearModelButton.addEventListener("click", async () => {
+  clearModelButton.disabled = true;
+  try {
+    if (kokoroModel?.model?.dispose) await kokoroModel.model.dispose();
+    kokoroModel = null;
+    kokoroModelPromise = null;
+    await Promise.all([caches.delete(MODEL_CACHE_NAME), caches.delete(VOICE_CACHE_NAME)]);
+    modelProgress.value = 0;
+    modelStatus.textContent = "Kokoro model files removed from this browser’s local cache.";
+    await recordUiLog("model.cache.cleared", { source: MODEL_ID });
+  } catch (error) {
+    modelStatus.textContent = "Could not remove the model cache (" + errorKind(error) + ").";
+    await recordUiLog("model.cache.clear.failed", { source: MODEL_ID, kind: errorKind(error) });
+  } finally {
+    clearModelButton.disabled = false;
+    await refreshDiagnosticLog();
   }
 });
 
@@ -268,14 +418,10 @@ document.querySelector("#export-log").addEventListener("click", async () => {
 
 async function loadSettings() {
   const settings = { ...DEFAULTS, ...(await api.storage.local.get(null)) };
-  document.querySelector("#server-url").value = settings.serverUrl;
   document.querySelector("#buffer-size").value = settings.bufferSize;
-  document.querySelector("#voice-style").value = settings.voiceStyle;
+  document.querySelector("#voice-style").value = VOICES.includes(settings.voiceStyle) ? settings.voiceStyle : DEFAULTS.voiceStyle;
   document.querySelector("#save-audio").checked = Boolean(settings.saveAudio);
   document.querySelector("#save-folder").value = settings.saveFolder;
-  document.querySelector("#voice-transcript").value = settings.referenceTranscript;
-  document.querySelector("#keep-voice").checked = Boolean(settings.referenceAudio);
-  document.querySelector("#remove-voice").hidden = !settings.referenceAudio;
   document.querySelector("#save-folder").disabled = !settings.saveAudio;
 }
 
@@ -320,10 +466,6 @@ document.querySelector("#save-audio").addEventListener("change", (event) => {
   document.querySelector("#save-folder").disabled = !event.target.checked;
 });
 
-document.querySelector("#voice-file").addEventListener("change", (event) => {
-  selectedReference = event.target.files?.[0] ?? null;
-});
-
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   status.textContent = "Saving…";
@@ -336,50 +478,19 @@ form.addEventListener("submit", async (event) => {
     } else if (await api.permissions.contains(downloadPermission)) {
       await api.permissions.remove(downloadPermission);
     }
-    const serverUrl = normalizeLocalUrl(document.querySelector("#server-url").value);
-    const transcript = document.querySelector("#voice-transcript").value.trim();
-    const keepVoice = document.querySelector("#keep-voice").checked;
-    let referenceAudio = "";
-    if (selectedReference) {
-      if (!transcript) throw new Error("Enter the words spoken in the reference MP3.");
-      referenceAudio = await fileToBase64(selectedReference);
-    } else if (keepVoice) {
-      const old = await api.storage.local.get({ referenceAudio: "" });
-      referenceAudio = old.referenceAudio;
-    }
     const saveFolder = sanitizeFolder(document.querySelector("#save-folder").value);
     const settings = {
-      serverUrl,
       bufferSize: Math.max(1, Math.min(20, Number(document.querySelector("#buffer-size").value) || 5)),
       voiceStyle: document.querySelector("#voice-style").value,
       saveAudio,
-      saveFolder,
-      referenceAudio: keepVoice ? referenceAudio : "",
-      referenceTranscript: keepVoice ? transcript : ""
+      saveFolder
     };
     await api.storage.local.set(settings);
-    selectedReference = null;
-    document.querySelector("#voice-file").value = "";
-    document.querySelector("#remove-voice").hidden = !settings.referenceAudio;
     status.textContent = "Settings saved on this device.";
     await recordUiLog("settings.saved", { bufferSize: settings.bufferSize, voiceStyle: settings.voiceStyle });
   } catch (error) {
     status.textContent = error.message;
     await recordUiLog("settings.save.failed", { kind: errorKind(error) });
-  }
-});
-
-document.querySelector("#remove-voice").addEventListener("click", async () => {
-  try {
-    await api.storage.local.set({ referenceAudio: "", referenceTranscript: "" });
-    document.querySelector("#voice-transcript").value = "";
-    document.querySelector("#keep-voice").checked = false;
-    document.querySelector("#remove-voice").hidden = true;
-    status.textContent = "Saved reference voice removed.";
-    await recordUiLog("voice.reference.removed");
-  } catch (error) {
-    status.textContent = "Could not remove the saved reference voice.";
-    await recordUiLog("voice.reference.remove.failed", { kind: errorKind(error) });
   }
 });
 
@@ -437,28 +548,10 @@ document.querySelector("#stop-reading").addEventListener("click", async () => {
   }
 });
 
-function normalizeLocalUrl(value) {
-  const url = new URL(value);
-  const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
-  if (url.protocol !== "http:" || !localHosts.has(url.hostname)) {
-    throw new Error("The speech server must use a local address: localhost, 127.0.0.1, or ::1.");
-  }
-  return url.toString().replace(/\/$/, "");
-}
-
 function sanitizeFolder(value) {
   return value.trim().replace(/\\/g, "/").split("/")
     .filter((part) => part && part !== "." && part !== "..")
     .join("/");
-}
-
-async function fileToBase64(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-  }
-  return btoa(binary);
 }
 
 function playChunk(message) {
