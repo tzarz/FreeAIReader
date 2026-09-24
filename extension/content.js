@@ -19,7 +19,12 @@ document.addEventListener("contextmenu", (event) => {
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target === "extension") return false;
   if (message?.type === "FREEAIREADER_EXTRACT") {
-    sendResponse(extractText(message));
+    try {
+      sendResponse(extractText(message));
+    } catch (error) {
+      recordContentLog("page.extract.failed", { kind: errorKind(error) });
+      sendResponse({ text: "" });
+    }
     return false;
   }
   if (message?.type === "FREEAIREADER_PLAY_CHUNK") {
@@ -59,14 +64,20 @@ function isReadable(node) {
 }
 
 function enqueueAudio(message) {
-  if (activeSessionId && activeSessionId !== message.sessionId) stopPlayback();
-  activeSessionId = message.sessionId;
-  const binary = atob(message.audioBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  const url = URL.createObjectURL(new Blob([bytes], { type: message.mimeType || "audio/wav" }));
-  playbackQueue.push({ ...message, url });
-  pumpPlayback();
+  try {
+    if (activeSessionId && activeSessionId !== message.sessionId) stopPlayback();
+    activeSessionId = message.sessionId;
+    const binary = atob(message.audioBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    const url = URL.createObjectURL(new Blob([bytes], { type: message.mimeType || "audio/wav" }));
+    playbackQueue.push({ ...message, url });
+    pumpPlayback();
+  } catch (error) {
+    showStatus(`Could not prepare audio playback: ${error.message}`);
+    recordContentLog("playback.prepare.failed", { index: Number(message.index) + 1, kind: errorKind(error) });
+    api.runtime.sendMessage({ type: "FREEAIREADER_CHUNK_PLAYED", sessionId: message.sessionId, index: message.index }).catch(() => {});
+  }
 }
 
 async function pumpPlayback() {
@@ -75,17 +86,26 @@ async function pumpPlayback() {
   const item = playbackQueue.shift();
   const player = new Audio(item.url);
   activePlayer = player;
+  const playbackStartedAt = Date.now();
+  let finishReason = "complete";
   try {
     const started = await playWithActivation(player);
-    if (!started) return;
+    if (!started) {
+      finishReason = "stopped";
+      return;
+    }
+    recordContentLog("playback.started", { index: item.index + 1 });
     await new Promise((resolve, reject) => {
-      stopPlaybackPromise = resolve;
+      stopPlaybackPromise = () => { finishReason = "stopped"; resolve(); };
       player.addEventListener("ended", resolve, { once: true });
       player.addEventListener("error", () => reject(new Error("The browser could not play this audio.")), { once: true });
     });
   } catch (error) {
+    finishReason = "failed";
     showStatus(`Playback needs attention: ${error.message}`);
+    recordContentLog("playback.failed", { index: item.index + 1, durationMs: Date.now() - playbackStartedAt, kind: errorKind(error) });
   } finally {
+    if (finishReason !== "failed") recordContentLog(`playback.${finishReason}`, { index: item.index + 1, durationMs: Date.now() - playbackStartedAt });
     player.pause();
     player.removeAttribute("src");
     URL.revokeObjectURL(item.url);
@@ -93,7 +113,7 @@ async function pumpPlayback() {
       type: "FREEAIREADER_CHUNK_PLAYED",
       sessionId: item.sessionId,
       index: item.index
-    });
+    }).catch(() => {});
     activePlayer = null;
     stopPlaybackPromise = null;
     playing = false;
@@ -171,6 +191,7 @@ async function playWithActivation(player) {
     return true;
   } catch (error) {
     if (error.name !== "NotAllowedError") throw error;
+    recordContentLog("playback.autoplay.blocked");
     showStatus("Click Start audio to allow playback.");
     statusActionNode.hidden = false;
     return new Promise((resolve) => {
@@ -184,8 +205,20 @@ async function playWithActivation(player) {
           resolve(true);
         } catch (retryError) {
           showStatus(`Playback needs attention: ${retryError.message}`);
+          recordContentLog("playback.failed", { kind: errorKind(retryError) });
+          const resolveStart = pendingStartResolve;
+          pendingStartResolve = null;
+          resolveStart?.(false);
         }
       };
     });
   }
+}
+
+function errorKind(error) {
+  return error?.name === "TypeError" ? "network-or-type" : String(error?.name || "unknown").slice(0, 40);
+}
+
+function recordContentLog(event, details = {}) {
+  api.runtime.sendMessage({ type: "FREEAIREADER_LOG", event, details }).catch(() => {});
 }

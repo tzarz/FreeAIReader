@@ -8,6 +8,9 @@
 </head>
 <body>
   <main class="shell">
+    <div id="browser-api-warning" class="browser-api-warning" role="alert" hidden>
+      Firefox has not made the extension APIs available to this tab. If this profile always uses Private Browsing, open Add-ons → FreeAIReader → Details and set “Run in Private Windows” to Allow, then reload. That permission lets FreeAIReader read pages opened in private tabs.
+    </div>
     <header class="hero">
       <div class="mark" aria-hidden="true">FR</div>
       <div>
@@ -88,9 +91,41 @@
       </form>
     </section>
 
+    <section class="card model-card">
+      <div><p class="eyebrow">LOCAL MODEL</p><h2>Download Fish Speech weights</h2></div>
+      <label class="field">
+        <span>Model</span>
+        <select id="model-choice">
+          <option value="fish-speech-1.5">Fish Speech V1.5 — compact, about 1.47 GB</option>
+          <option value="s2-pro">Fish Audio S2 Pro — flagship, about 11 GB</option>
+        </select>
+      </label>
+      <p id="model-description" class="help"></p>
+      <p id="model-hardware" class="model-hardware"></p>
+      <label class="check-row model-license-check">
+        <input id="accept-model-license" type="checkbox">
+        <span id="model-license-text"></span>
+      </label>
+      <div class="model-actions">
+        <button class="primary" id="download-model" type="button" disabled>Download model files</button>
+        <button class="secondary" id="cancel-model" type="button" hidden>Cancel downloads</button>
+        <a id="model-link" href="https://huggingface.co/fishaudio/fish-speech-1.5" target="_blank" rel="noreferrer">Official model page and license</a>
+      </div>
+      <progress id="model-progress" max="100" value="0" aria-label="Model download progress"></progress>
+      <p id="model-status" role="status" aria-live="polite"></p>
+      <ol id="model-files" class="model-files"></ol>
+      <details>
+        <summary id="model-run-summary">Run it with Fish Speech V1.5</summary>
+        <p id="model-run-steps" class="help"></p>
+        <pre><code id="model-run-command"></code></pre>
+        <p class="help">If Firefox uses another Downloads location, replace the path above.</p>
+      </details>
+      <p class="help compact">FishAudio S1-mini is listed as a 0.5B model, but Hugging Face gates its files and it needs more disk space than V1.5's public download.</p>
+    </section>
+
     <section class="card pdf-card">
       <div><p class="eyebrow">PDF READER</p><h2>Read a PDF</h2></div>
-      <p class="help">Choose a PDF from your computer. Its text is extracted in this extension page and sent to your local reader.</p>
+      <p class="help">Choose a PDF from your computer, or right-click a PDF open in your browser and choose Read from the top. Its text is extracted here and sent to your local reader.</p>
       <label class="field">
         <span>PDF file</span>
         <input id="pdf-file" type="file" accept="application/pdf,.pdf">
@@ -101,6 +136,21 @@
         <button class="text-button" id="stop-reading" type="button">Stop reading</button>
       </div>
       <p id="pdf-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card diagnostics-card">
+      <div class="section-heading">
+        <div><p class="eyebrow">LOCAL DIAGNOSTICS</p><h2>Activity and failures</h2></div>
+        <span class="local-badge"><span></span> Stored on this device</span>
+      </div>
+      <p class="help">The last 500 events are kept in this browser. Logs include timing, status codes, file sizes, and failure types; they never include page text, full page addresses, voice recordings, or generated audio. Nothing is uploaded. Export JSON to share a problem report.</p>
+      <div class="log-actions">
+        <button class="secondary" id="refresh-log" type="button">Refresh log</button>
+        <button class="secondary" id="export-log" type="button">Export JSON</button>
+        <button class="text-button" id="clear-log" type="button">Clear log</button>
+      </div>
+      <p id="log-status" role="status" aria-live="polite"></p>
+      <ol id="diagnostic-log" class="diagnostic-log" reversed></ol>
     </section>
 
     <footer>

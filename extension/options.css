@@ -16,6 +16,8 @@ h1 { margin-bottom: 4px; font-size: 30px; letter-spacing: -.04em; }
 h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -.025em; }
 .eyebrow { margin-bottom: 5px; color: #507564; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 .tagline { margin-bottom: 0; color: #5f6e65; font-size: 14px; }
+.browser-api-warning { margin-bottom: 18px; padding: 14px 16px; border: 1px solid #e7bb74; border-radius: 10px; background: #fff5df; color: #684911; font-size: 13px; line-height: 1.55; }
+.browser-api-warning[hidden] { display: none; }
 .card { padding: 26px 28px; margin-bottom: 18px; border: 1px solid #e1e6df; border-radius: 16px; background: #fff; box-shadow: 0 5px 20px #26382b08; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .local-badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 99px; background: #edf6ef; color: #36664b; font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -45,6 +47,21 @@ button[hidden] { display: none; }
 .pdf-card h2 { margin-bottom: 8px; }
 .pdf-card .field { margin-bottom: 12px; }
 .pdf-actions { display: flex; gap: 16px; align-items: center; }
+.model-card h2 { margin-bottom: 8px; }
+.model-hardware { padding: 12px 14px; border-radius: 8px; background: #fff6e8; color: #715326; font-size: 12px; line-height: 1.5; }
+.model-actions, .log-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 16px 0 10px; }
+.model-actions a { color: #356d4d; font-size: 12px; }
+#model-progress { display: block; width: 100%; height: 12px; accent-color: #236b46; }
+#model-status, #log-status { min-height: 18px; margin: 8px 0; color: #416c4e; font-size: 12px; }
+.model-files, .diagnostic-log { max-height: 220px; overflow: auto; padding: 8px 8px 8px 30px; border-radius: 8px; background: #f7f9f6; color: #47564c; font-size: 11px; line-height: 1.55; }
+.model-files:empty, .diagnostic-log:empty { display: none; }
+.model-files li, .diagnostic-log li { margin: 3px 0; overflow-wrap: anywhere; }
+.model-files code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+details { margin-top: 17px; border-top: 1px solid #e4e9e4; padding-top: 13px; }
+summary { color: #26362c; font-size: 12px; font-weight: 700; cursor: pointer; }
+pre { overflow-x: auto; padding: 13px; border-radius: 8px; background: #1d2922; color: #edf3ed; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diagnostic-log li[data-level="failure"] { color: #a33127; }
+.diagnostic-log time { color: #758077; }
 footer { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 10px 3px; color: #69766d; font-size: 11px; }
 footer strong { color: #356d4d; }
 footer a { color: #356d4d; }

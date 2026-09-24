@@ -4,9 +4,9 @@
 
 FreeAIReader is an open source browser reader in development. It sends text to Fish Speech running on your computer and plays the generated speech in your browser. It has no cloud account, subscription, or advertising requirement.
 
-> **Built with Fish Audio.** Fish Speech is free for personal, noncommercial use under the [Fish Audio Research License](LICENSE-FISH-AUDIO.txt). Commercial use requires a separate license from Fish Audio. Review the upstream terms before downloading or using model weights.
+> **Built with Fish Audio.** The current Fish Speech source and S2-Pro weights use the [Fish Audio Research License](LICENSE-FISH-AUDIO.txt); commercial S2-Pro use needs separate written permission. The legacy V1.5 weights use CC BY-NC-SA 4.0. Review the selected model's terms before downloading or using weights.
 
-This repository tracks Fish Audio's official source as a Git submodule. Model weights are large and must be downloaded separately from Fish Audio's official [S2-Pro model](https://huggingface.co/fishaudio/s2-pro). Model weights are not included here.
+This repository tracks Fish Audio's official source as a Git submodule. Model weights are not included in this repository or extension package. In settings, the extension can download either the compact official [Fish Speech V1.5 model](https://huggingface.co/fishaudio/fish-speech-1.5) or the flagship [S2-Pro model](https://huggingface.co/fishaudio/s2-pro) into a subfolder under your browser's Downloads directory.
 
 ## Project plan
 
@@ -34,7 +34,22 @@ git submodule update --init --depth 1
 
 Fish Audio's current S2 guide recommends a GPU with 24 GB of VRAM. Fish Speech documents a CPU install too, but it may generate too slowly to keep the sentence buffer full. Its guide currently lists Linux and WSL as supported systems.
 
-Install [uv](https://docs.astral.sh/uv/) and run these commands from the project root:
+For the compact Fish Speech V1.5 model, use the official `v1.5.1` source and install steps. The model is about 1.47 GB, uses the CC BY-NC-SA 4.0 license, and its guide recommends 4 GB GPU memory:
+
+```sh
+cd vendor/fish-speech
+git checkout v1.5.1
+python3.10 -m venv .venv-v1.5
+source .venv-v1.5/bin/activate
+python -m pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+python -m pip install -e '.[stable]'
+python -m tools.api_server --listen 127.0.0.1:8080 \
+  --llama-checkpoint-path "$HOME/Downloads/FreeAIReader/models/fish-speech-1.5" \
+  --decoder-checkpoint-path "$HOME/Downloads/FreeAIReader/models/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth" \
+  --decoder-config-name firefly_gan_vq
+```
+
+To use S2-Pro instead, install [uv](https://docs.astral.sh/uv/) and run these commands from the project root. The extension can download the weights, or use the official CLI command shown here:
 
 ```sh
 cd vendor/fish-speech
@@ -43,7 +58,14 @@ uv run hf download fishaudio/s2-pro --local-dir checkpoints/s2-pro
 uv run python tools/api_server.py --llama-checkpoint-path checkpoints/s2-pro --decoder-checkpoint-path checkpoints/s2-pro/codec.pth --listen 127.0.0.1:8080
 ```
 
-Choose the CUDA extra that matches your installed CUDA version (`cu126`, `cu128`, or `cu129`). For CPU-only setup, the official command is `uv sync --python 3.12 --extra cpu`. S2-Pro weights are several gigabytes and are downloaded from Fish Audio's official Hugging Face page under the same Fish Audio Research License.
+Choose the CUDA extra that matches your installed CUDA version (`cu126`, `cu128`, or `cu129`). For CPU-only setup, the official command is `uv sync --python 3.12 --extra cpu`. S2-Pro weights total about 11 GB. Review the Fish Audio Research License before downloading; it allows research and noncommercial use, while commercial use needs a separate written license. Current upstream guidance recommends at least 24 GB GPU memory for inference. This computer's RTX 4080 SUPER has 16 GB, so S2-Pro may not load or run reliably here. The smaller V1.5 server uses a legacy Fish Speech checkout; switch the submodule back to the pinned current commit before setting up S2-Pro again.
+
+When using FreeAIReader's downloader on Linux with Firefox's standard Downloads folder, start the server with the downloaded weights like this:
+
+```sh
+cd vendor/fish-speech
+uv run python tools/api_server.py --llama-checkpoint-path "$HOME/Downloads/FreeAIReader/models/s2-pro" --decoder-checkpoint-path "$HOME/Downloads/FreeAIReader/models/s2-pro/codec.pth" --listen 127.0.0.1:8080
+```
 
 ## Build and install the extension
 
@@ -54,7 +76,9 @@ npm run package -- both
 
 The command creates `dist/freeaireader-chrome.zip` and `dist/freeaireader-firefox.zip`, as well as unpacked folders. Load the Chrome folder from `chrome://extensions` with Developer mode enabled. For temporary Firefox use, open `about:debugging#/runtime/this-firefox` and load `dist/freeaireader-firefox/manifest.json`. Permanent Firefox installation requires Mozilla signing. Edge can load the Chrome folder from `edge://extensions`.
 
-Click the extension icon to open settings. Right-click a webpage to read from the top, from the clicked paragraph onward, or from selected text. Use the PDF section in settings to choose a PDF file. Scanned PDFs without embedded text need OCR, which is not included yet.
+If Firefox is set to always use Private Browsing, open the add-on's Details page and choose **Allow** for **Run in Private Windows**. Firefox disables extensions in private windows by default; this permission lets FreeAIReader access pages in those windows.
+
+Click the extension icon to open settings. Right-click a webpage to read from the top, from the clicked paragraph onward, or from selected text. Use the PDF section in settings to choose a local PDF; right-click a browser-open PDF and choose Read from the top to send it through the same reader. Scanned PDFs without embedded text need OCR, which is not included yet.
 
 ## Privacy behavior
 
@@ -63,6 +87,7 @@ Click the extension icon to open settings. Right-click a webpage to read from th
 - Generated audio is discarded after playback by default.
 - Saving clips is opt-in. Settings let you choose a subfolder inside the browser's Downloads folder.
 - Settings are stored in the browser's extension storage. Reference voice audio is saved only when you explicitly choose the save voice option.
+- The extension keeps at most 500 diagnostic events locally. Logs contain event names and technical metadata such as durations, HTTP status codes, and byte counts; they exclude page text, full page addresses, voice recordings, and generated audio. Nothing is uploaded. You can export or clear the log in settings.
 
 ## Supported browsers
 
